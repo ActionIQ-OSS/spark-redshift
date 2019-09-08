@@ -19,13 +19,16 @@ package com.databricks.spark.redshift
 import java.net.URI
 import java.util.UUID
 
+import com.amazonaws.{ClientConfiguration, Protocol}
+import com.amazonaws.auth.AWSCredentialsProvider
+
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
-
-import com.amazonaws.services.s3.{AmazonS3URI, AmazonS3Client}
+import com.amazonaws.services.s3.{AmazonS3Client, AmazonS3URI, S3ClientOptions}
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
+import org.apache.spark.sql.SQLContext
 import org.slf4j.LoggerFactory
 
 /**
@@ -203,5 +206,31 @@ private[redshift] object Utils {
       case regionRegex(region) => Some(region)
       case _ => None
     }
+  }
+
+  def getS3Client(
+    creds: AWSCredentialsProvider,
+    s3ClientFactory: (AWSCredentialsProvider, ClientConfiguration) => AmazonS3Client,
+    sqlContext: SQLContext
+  ): AmazonS3Client = {
+    val config = new ClientConfiguration()
+    Option(
+      sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.path.style.access")
+    ).foreach { pathAccess =>
+      if (pathAccess.toLowerCase() == "true") {
+        config.setProtocol(Protocol.HTTP)
+      }
+    }
+    val s3Client = s3ClientFactory(creds, config)
+    Option(sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.endpoint")).foreach{ endpoint =>
+      s3Client.setEndpoint(endpoint)
+    }
+    Option(
+      sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.connection.ssl.enabled")
+    ).foreach{ enabled =>
+      val enabledBool = enabled.toLowerCase() == "true"
+      s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(enabledBool))
+    }
+    s3Client
   }
 }

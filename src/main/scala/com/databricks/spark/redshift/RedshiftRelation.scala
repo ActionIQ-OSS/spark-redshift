@@ -19,19 +19,18 @@ package com.databricks.spark.redshift
 import java.io.InputStreamReader
 import java.net.URI
 
+import com.amazonaws.{ClientConfiguration, Protocol}
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 
 import scala.collection.JavaConverters._
-
 import com.amazonaws.auth.AWSCredentialsProvider
-import com.amazonaws.services.s3.AmazonS3Client
+import com.amazonaws.services.s3.{AmazonS3Client, S3ClientOptions}
 import com.eclipsesource.json.Json
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SaveMode, SQLContext}
+import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
 import org.slf4j.LoggerFactory
-
 import com.databricks.spark.redshift.Parameters.MergedParameters
 
 /**
@@ -39,7 +38,7 @@ import com.databricks.spark.redshift.Parameters.MergedParameters
  */
 private[redshift] case class RedshiftRelation(
     jdbcWrapper: JDBCWrapper,
-    s3ClientFactory: AWSCredentialsProvider => AmazonS3Client,
+    s3ClientFactory: (AWSCredentialsProvider, ClientConfiguration) => AmazonS3Client,
     params: MergedParameters,
     userSchema: Option[StructType])
     (@transient val sqlContext: SQLContext)
@@ -88,9 +87,10 @@ private[redshift] case class RedshiftRelation(
 
   override def buildScan(requiredColumns: Array[String], filters: Array[Filter]): RDD[Row] = {
     val creds = AWSCredentialsUtils.load(params, sqlContext.sparkContext.hadoopConfiguration)
+    val client = Utils.getS3Client(creds, s3ClientFactory, sqlContext)
     for (
       redshiftRegion <- Utils.getRegionForRedshiftCluster(params.jdbcUrl);
-      s3Region <- Utils.getRegionForS3Bucket(params.rootTempDir, s3ClientFactory(creds))
+      s3Region <- Utils.getRegionForS3Bucket(params.rootTempDir, client)
     ) {
       if (redshiftRegion != s3Region) {
         // We don't currently support `extraunloadoptions`, so even if Amazon _did_ add a `region`
@@ -103,7 +103,7 @@ private[redshift] case class RedshiftRelation(
           s"this read will fail.")
       }
     }
-    Utils.checkThatBucketHasObjectLifecycleConfiguration(params.rootTempDir, s3ClientFactory(creds))
+    Utils.checkThatBucketHasObjectLifecycleConfiguration(params.rootTempDir, client)
     if (requiredColumns.isEmpty) {
       // In the special case where no columns were requested, issue a `count(*)` against Redshift
       // rather than unloading data.
@@ -144,8 +144,7 @@ private[redshift] case class RedshiftRelation(
         val cleanedTempDirUri =
           Utils.fixS3Url(Utils.removeCredentialsFromURI(URI.create(tempDir)).toString)
         val s3URI = Utils.createS3URI(cleanedTempDirUri)
-        val s3Client = s3ClientFactory(creds)
-        val is = s3Client.getObject(s3URI.getBucket, s3URI.getKey + "manifest").getObjectContent
+        val is = client.getObject(s3URI.getBucket, s3URI.getKey + "manifest").getObjectContent
         val s3Files = try {
           val entries = Json.parse(new InputStreamReader(is)).asObject().get("entries").asArray()
           entries.iterator().asScala.map(_.asObject().get("url").asString()).toSeq

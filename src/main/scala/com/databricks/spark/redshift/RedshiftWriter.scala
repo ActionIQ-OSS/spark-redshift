@@ -19,17 +19,16 @@ package com.databricks.spark.redshift
 import java.net.URI
 import java.sql.{Connection, Date, SQLException, Timestamp}
 
+import com.amazonaws.ClientConfiguration
 import com.amazonaws.auth.AWSCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3Client
 import org.apache.hadoop.fs.{FileSystem, Path}
-
 import org.apache.spark.TaskContext
 import org.slf4j.LoggerFactory
+
 import scala.collection.mutable
 import scala.util.control.NonFatal
-
 import com.databricks.spark.redshift.Parameters.MergedParameters
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
 import org.apache.spark.sql.types._
@@ -59,7 +58,7 @@ import org.apache.spark.sql.types._
  */
 private[redshift] class RedshiftWriter(
     jdbcWrapper: JDBCWrapper,
-    s3ClientFactory: AWSCredentialsProvider => AmazonS3Client) {
+    s3ClientFactory: (AWSCredentialsProvider, ClientConfiguration) => AmazonS3Client) {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -351,9 +350,10 @@ private[redshift] class RedshiftWriter(
     val creds: AWSCredentialsProvider =
       AWSCredentialsUtils.load(params, sqlContext.sparkContext.hadoopConfiguration)
 
+    val client = Utils.getS3Client(creds, s3ClientFactory, sqlContext)
     for (
       redshiftRegion <- Utils.getRegionForRedshiftCluster(params.jdbcUrl);
-      s3Region <- Utils.getRegionForS3Bucket(params.rootTempDir, s3ClientFactory(creds))
+      s3Region <- Utils.getRegionForS3Bucket(params.rootTempDir, client)
     ) {
      val regionIsSetInExtraCopyOptions =
        params.extraCopyOptions.contains(s3Region) && params.extraCopyOptions.contains("region")
@@ -386,7 +386,7 @@ private[redshift] class RedshiftWriter(
     Utils.assertThatFileSystemIsNotS3BlockFileSystem(
       new URI(params.rootTempDir), sqlContext.sparkContext.hadoopConfiguration)
 
-    Utils.checkThatBucketHasObjectLifecycleConfiguration(params.rootTempDir, s3ClientFactory(creds))
+    Utils.checkThatBucketHasObjectLifecycleConfiguration(params.rootTempDir, client)
 
     // Save the table's rows to S3:
     val manifestUrl = unloadData(
@@ -430,4 +430,4 @@ private[redshift] class RedshiftWriter(
 
 object DefaultRedshiftWriter extends RedshiftWriter(
   DefaultJDBCWrapper,
-  awsCredentials => new AmazonS3Client(awsCredentials))
+  (awsCredentials, creds) => new AmazonS3Client(awsCredentials, creds))
