@@ -215,7 +215,7 @@ private[redshift] object Utils {
   ): AmazonS3Client = {
     val config = new ClientConfiguration()
     Option(
-      sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.path.style.access")
+      sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.connection.ssl.enabled")
     ).foreach { pathAccess =>
       if (pathAccess.toLowerCase() == "true") {
         config.setProtocol(Protocol.HTTP)
@@ -226,10 +226,11 @@ private[redshift] object Utils {
       s3Client.setEndpoint(endpoint)
     }
     Option(
-      sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.connection.ssl.enabled")
+      sqlContext.sparkContext.hadoopConfiguration.get("fs.s3a.path.style.access")
     ).foreach{ enabled =>
       val enabledBool = enabled.toLowerCase() == "true"
-      s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(enabledBool))
+      val opts = new S3ClientOptions().withPathStyleAccess(enabledBool)
+      s3Client.setS3ClientOptions(opts)
     }
     s3Client
   }
