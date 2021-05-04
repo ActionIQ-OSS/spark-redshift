@@ -194,6 +194,8 @@ private[redshift] case class RedshiftRelation(
     // the credentials passed via `credsString`.
     val fixedUrl = Utils.fixS3Url(Utils.removeCredentialsFromURI(new URI(tempDir)).toString)
 
+    val sseKmsClause = sseKmsKey.map(key => s"KMS_KEY_ID '$key' ENCRYPTED").getOrElse("")
+
     s"UNLOAD ('$query') TO '$fixedUrl' WITH CREDENTIALS '$credsString'" +
       s" ESCAPE MANIFEST NULL AS '${params.nullString}'" +
       s" $sseKmsClause"
