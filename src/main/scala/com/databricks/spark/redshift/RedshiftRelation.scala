@@ -190,6 +190,7 @@ private[redshift] case class RedshiftRelation(
       val escapedTableNameOrSubqury = tableNameOrSubquery.replace("\\", "\\\\").replace("'", "\\'")
       s"SELECT $columnList FROM $escapedTableNameOrSubqury $whereClause"
     }
+    log.info(query)
     // We need to remove S3 credentials from the unload path URI because they will conflict with
     // the credentials passed via `credsString`.
     val fixedUrl = Utils.fixS3Url(Utils.removeCredentialsFromURI(new URI(tempDir)).toString)
