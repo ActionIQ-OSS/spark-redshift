@@ -198,7 +198,8 @@ private[redshift] case class RedshiftRelation(
 
     val sseKmsClause = sseKmsKey.map(key => s"KMS_KEY_ID '$key' ENCRYPTED").getOrElse("")
 
-    s"UNLOAD ('$query') TO '$fixedUrl' WITH CREDENTIALS '$credsString' ESCAPE MANIFEST NULL AS '${params.nullString}' $sseKmsClause"
+    s"UNLOAD ('$query') TO '$fixedUrl' WITH CREDENTIALS '$credsString'" +
+      s" ESCAPE MANIFEST NULL AS '${params.nullString}' $sseKmsClause"
   }
 
   private def pruneSchema(schema: StructType, columns: Array[String]): StructType = {
