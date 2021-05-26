@@ -165,6 +165,7 @@ private[redshift] case class RedshiftRelation(
       sqlContext.read
         .format(classOf[RedshiftFileFormat].getName)
         .schema(prunedSchema)
+        .option("nullString", params.nullString)
         .load(filesToRead: _*)
         .queryExecution.executedPlan.execute().asInstanceOf[RDD[Row]]
     }
@@ -197,7 +198,7 @@ private[redshift] case class RedshiftRelation(
 
     val sseKmsClause = sseKmsKey.map(key => s"KMS_KEY_ID '$key' ENCRYPTED").getOrElse("")
 
-    s"UNLOAD ('$query') TO '$fixedUrl' WITH CREDENTIALS '$credsString' ESCAPE MANIFEST $sseKmsClause"
+    s"UNLOAD ('$query') TO '$fixedUrl' WITH CREDENTIALS '$credsString' ESCAPE MANIFEST NULL AS '${params.nullString}' $sseKmsClause"
   }
 
   private def pruneSchema(schema: StructType, columns: Array[String]): StructType = {
